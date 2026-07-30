@@ -91,7 +91,6 @@ def _format_rules_html(section_key: str) -> str:
 
 
 def _make_section_header_renderer(section_key: str, title: str):
-    @st.fragment(run_every="1s")
     def _render():
         cols = st.columns([0.92, 0.08], vertical_alignment="center")
         cols[0].markdown(f"### {title}")

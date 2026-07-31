@@ -25,7 +25,6 @@ import base64
 import os
 import shutil
 import tempfile
-import uuid
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -68,10 +67,17 @@ class ClaimIn(BaseModel):
     independent: bool = False
 
 
+class SummaryParagraphIn(BaseModel):
+    text: str = ""
+
+
 class GenerateRequest(BaseModel):
     title: str = ""
     field_of_invention_text: str = ""
     background: List[SubsectionIn] = Field(default_factory=list)
+    # Preferred summary payload: one block per UI paragraph.
+    summary_paragraphs: List[SummaryParagraphIn] = Field(default_factory=list)
+    # Legacy summary payload (kept for backward compatibility).
     summary_text: str = ""
     figures: List[FigureIn] = Field(default_factory=list)
     detailed_description: List[SubsectionIn] = Field(default_factory=list)
@@ -147,15 +153,28 @@ def generate(req: GenerateRequest):
         flags += [f"Field of the Invention: {f}" for f in f_flags]
 
         background: List[Subsection] = []
-        for sub in req.background:
+        for idx, sub in enumerate(req.background, start=1):
             paras, sflags = normalizer.normalize_section(sub.text)
-            flags += [f"Background - {sub.title or 'Untitled'}: {f}" for f in sflags]
+            heading = sub.title.strip()
+            label = heading or f"Paragraph block {idx}"
+            flags += [f"Background - {label}: {f}" for f in sflags]
             background.append(
-                Subsection(title=normalizer.normalize_heading(sub.title or "Untitled", "title"), paragraphs=paras)
+                Subsection(
+                    title=normalizer.normalize_heading(heading, "title") if heading else "",
+                    paragraphs=paras,
+                )
             )
 
-        summary_paragraphs, s_flags = normalizer.normalize_section(req.summary_text)
-        flags += [f"Summary: {f}" for f in s_flags]
+        summary_paragraphs: List[str] = []
+        if req.summary_paragraphs:
+            for idx, block in enumerate(req.summary_paragraphs, start=1):
+                paras, s_flags = normalizer.normalize_section(block.text)
+                summary_paragraphs.extend(paras)
+                flags += [f"Summary - Paragraph block {idx}: {f}" for f in s_flags]
+        else:
+            paras, s_flags = normalizer.normalize_section(req.summary_text)
+            summary_paragraphs.extend(paras)
+            flags += [f"Summary: {f}" for f in s_flags]
 
         bdd_figures: List[Figure] = []
         for i, fig in enumerate(req.figures, start=1):
@@ -163,9 +182,11 @@ def generate(req: GenerateRequest):
             bdd_figures.append(Figure(number=i, caption=caption))
 
         detailed_description: List[Subsection] = []
-        for sub in req.detailed_description:
+        for idx, sub in enumerate(req.detailed_description, start=1):
             paras, dflags = normalizer.normalize_section(sub.text)
-            flags += [f"Detailed Description - {sub.title or 'Untitled'}: {f}" for f in dflags]
+            heading = sub.title.strip()
+            label = heading or f"Paragraph block {idx}"
+            flags += [f"Detailed Description - {label}: {f}" for f in dflags]
             comp_map: Dict[str, str] = {}
             for comp in sub.components:
                 name = comp.name.strip()
@@ -174,7 +195,7 @@ def generate(req: GenerateRequest):
                 comp_map[name] = comp.number.strip() if comp.number.strip() else f"auto:{comp.series}"
             detailed_description.append(
                 Subsection(
-                    title=normalizer.normalize_heading(sub.title or "Untitled", "title"),
+                    title=normalizer.normalize_heading(heading, "title") if heading else "",
                     paragraphs=paras,
                     components=comp_map,
                 )

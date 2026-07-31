@@ -102,7 +102,8 @@ def _add_body_paragraph(story, styles, numbered_text):
 
 
 def _add_subsection(story, styles, sub: Subsection):
-    story.append(Paragraph(escape(sub.title), styles["h2"]))
+    if sub.title.strip():
+        story.append(Paragraph(escape(sub.title), styles["h2"]))
     if not sub.paragraphs:
         return
     for para in sub.paragraphs:

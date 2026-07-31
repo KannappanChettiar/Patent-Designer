@@ -220,9 +220,10 @@ def _add_body_paragraph(document, numbered_text):
 
 
 def _add_subsection(document, sub: Subsection):
-    paragraph = document.add_paragraph(style="Heading 2")
-    run = paragraph.add_run(sub.title)
-    _style_run(run, 10, bold=True)
+    if sub.title.strip():
+        paragraph = document.add_paragraph(style="Heading 2")
+        run = paragraph.add_run(sub.title)
+        _style_run(run, 10, bold=True)
     if not sub.paragraphs:
         return
     for para in sub.paragraphs:

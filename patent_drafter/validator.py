@@ -175,7 +175,10 @@ def validate(
         report.results.append(CheckResult("Claim sentence count", "pass", "Every claim reads as a single sentence."))
 
     # --- Orphan headings (warning) ---
-    orphans = [s.title for s in (doc.background + doc.detailed_description) if not s.paragraphs]
+    orphans = [
+        s.title for s in (doc.background + doc.detailed_description)
+        if s.title.strip() and not s.paragraphs
+    ]
     if orphans:
         report.results.append(
             CheckResult("Orphan headings", "warning", f"Heading(s) with no content: {orphans}")

@@ -144,7 +144,7 @@ def _init_state():
         "title": "",
         "field_of_invention_text": "",
         "bg_subsections": [{"id": _new_id(), "title": "", "text": ""}],
-        "summary_text": "",
+        "summary_paragraphs": [{"id": _new_id(), "text": ""}],
         "bdd_figures": [{"id": _new_id(), "caption": ""}],
         "dd_subsections": [
             {
@@ -164,6 +164,17 @@ def _init_state():
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+    # Backward-compatible migration from old single summary field.
+    if "summary_text" in st.session_state:
+        legacy_summary = st.session_state.summary_text
+        if (
+            isinstance(st.session_state.summary_paragraphs, list)
+            and len(st.session_state.summary_paragraphs) == 1
+            and not st.session_state.summary_paragraphs[0].get("text", "").strip()
+            and str(legacy_summary).strip()
+        ):
+            st.session_state.summary_paragraphs[0]["text"] = legacy_summary
 
 
 _init_state()
@@ -217,9 +228,21 @@ if st.button("+ Add Background subsection"):
 # 4. Summary of the Invention
 # ---------------------------------------------------------------------------
 render_summary_header()
-st.session_state.summary_text = st.text_area(
-    "Summary of the Invention", value=st.session_state.summary_text, height=150
-)
+for i, para in enumerate(st.session_state.summary_paragraphs, start=1):
+    cols = st.columns([6, 1])
+    para["text"] = cols[0].text_area(
+        f"Summary paragraph {i}", value=para["text"], key=f"summary_text_{para['id']}", height=120
+    )
+    if cols[1].button("Remove", key=f"summary_remove_{para['id']}") and len(
+        st.session_state.summary_paragraphs
+    ) > 1:
+        st.session_state.summary_paragraphs = [
+            p for p in st.session_state.summary_paragraphs if p["id"] != para["id"]
+        ]
+        st.rerun()
+if st.button("+ Add Summary paragraph"):
+    st.session_state.summary_paragraphs.append({"id": _new_id(), "text": ""})
+    st.rerun()
 
 # ---------------------------------------------------------------------------
 # 5. Brief Description of Drawings
@@ -378,15 +401,23 @@ def _gather_and_normalize():
     flags += [f"Field of the Invention: {f}" for f in f_flags]
 
     background = []
-    for sub in st.session_state.bg_subsections:
+    for idx, sub in enumerate(st.session_state.bg_subsections, start=1):
         paras, sflags = normalizer.normalize_section(sub["text"])
-        flags += [f"Background - {sub['title'] or 'Untitled'}: {f}" for f in sflags]
+        heading = sub["title"].strip()
+        label = heading or f"Paragraph block {idx}"
+        flags += [f"Background - {label}: {f}" for f in sflags]
         background.append(
-            Subsection(title=normalizer.normalize_heading(sub["title"] or "Untitled", "title"), paragraphs=paras)
+            Subsection(
+                title=normalizer.normalize_heading(heading, "title") if heading else "",
+                paragraphs=paras,
+            )
         )
 
-    summary_paragraphs, s_flags = normalizer.normalize_section(st.session_state.summary_text)
-    flags += [f"Summary: {f}" for f in s_flags]
+    summary_paragraphs = []
+    for idx, para in enumerate(st.session_state.summary_paragraphs, start=1):
+        paras, s_flags = normalizer.normalize_section(para["text"])
+        summary_paragraphs.extend(paras)
+        flags += [f"Summary - Paragraph block {idx}: {f}" for f in s_flags]
 
     bdd_figures = []
     for i, fig in enumerate(st.session_state.bdd_figures, start=1):
@@ -394,9 +425,11 @@ def _gather_and_normalize():
         bdd_figures.append(Figure(number=i, caption=caption))
 
     detailed_description = []
-    for sub in st.session_state.dd_subsections:
+    for idx, sub in enumerate(st.session_state.dd_subsections, start=1):
         paras, dflags = normalizer.normalize_section(sub["text"])
-        flags += [f"Detailed Description - {sub['title'] or 'Untitled'}: {f}" for f in dflags]
+        heading = sub["title"].strip()
+        label = heading or f"Paragraph block {idx}"
+        flags += [f"Detailed Description - {label}: {f}" for f in dflags]
         comp_map = {}
         for comp in sub["components"]:
             name = comp["name"].strip()
@@ -408,7 +441,7 @@ def _gather_and_normalize():
                 comp_map[name] = f"auto:{comp['series']}"
         detailed_description.append(
             Subsection(
-                title=normalizer.normalize_heading(sub["title"] or "Untitled", "title"),
+                title=normalizer.normalize_heading(heading, "title") if heading else "",
                 paragraphs=paras,
                 components=comp_map,
             )
